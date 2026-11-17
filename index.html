@@ -1595,6 +1595,16 @@ document.addEventListener('input', function (e) {
     if (e.target.classList.contains('bulkIn') && S.page) S.page.vals[e.target.getAttribute('data-id')] = e.target.value === '' ? 0 : n;
   }
 });
+/* 아이폰에서 키보드가 닫힌 뒤 화면과 터치 위치가 어긋나는 문제 보정 */
+document.addEventListener('focusout', function (e) {
+  if (!/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  setTimeout(function () {
+    var a = document.activeElement;
+    if (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return;
+    window.scrollTo(window.scrollX, window.scrollY);
+    var sh = document.querySelector('.sheet'); if (sh) sh.scrollTop = sh.scrollTop;
+  }, 80);
+});
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && S.sheet) { S.sheet = null; renderSheet(); } });
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState === 'visible' && S.conf && !S.demo && !S.sheet) {
