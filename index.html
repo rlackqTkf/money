@@ -546,6 +546,7 @@ function homeView() {
     });
     h += '</section>';
   }
+  h += fixedHomeCard();
   h += goalCard();
   h += '<section class="card" style="padding:18px 20px 8px"><div class="row" style="justify-content:space-between;padding-bottom:6px"><h2 class="h2">최근 내역</h2><button style="border:0;background:transparent;font-size:13px;color:var(--sub);padding:6px" data-a="tab" data-v="ledger">전체 보기</button></div>' +
     (recent.length ? recent.map(function (t) { return txRow(t, true); }).join('') : '<p class="empty">아직 기록된 내역이 없어요</p>') + '</section>';
@@ -570,32 +571,18 @@ function activeFixed(ym) {
     return true;
   });
 }
-function fixedCard() {
-  var list = activeFixed(TODAY.slice(0, 7));
-  var d = +TODAY.slice(8, 10);
-  var dated = list.filter(function (f) { return num(f['결제일']) > 0; });
-  if (!list.length) return miniCard('고정지출', '없음', '설정에서 추가할 수 있어요');
-  if (!dated.length) {
-    var tot = list.reduce(function (s, f) { return s + num(f['금액']); }, 0);
-    return miniCard('이번 달 고정지출', won(tot), list.length + '건 · 결제일을 넣으면 남은 건을 알려줘요');
-  }
-  var left = dated.filter(function (f) { return num(f['결제일']) > d; });
-  return miniCard('남은 고정지출', left.length + '건', left.length ? left.map(function (f) { return f['이름']; }).join(', ') : '이번 달은 다 나갔어요');
-}
-/** 결제일이 3일 지났는데 이번 달 거래에서 못 찾았거나 덜 나간 고정 지출.
- *  가맹점키워드가 있으면 그 이름이 들어간 거래를 모두 더하고, 없으면 같은 카테고리에서 금액이 ±10% 안인 거래를 하나 찾아요 */
-function fixedGaps(ym) {
-  var tx = allTx().filter(function (t) { return t.ym === ym && spendOf(t) > 0; });
-  var used = {}, out = [], today = TODAY, last = daysIn(ym), dueOf = {};
+/** 이번 달 고정 지출 항목마다 실제 거래를 찾아 상태를 매겨요.
+ *  가맹점키워드가 있으면 그 이름이 들어간 거래를 모두 더하고, 없으면 같은 카테고리에서 금액이 ±10% 안인 거래를 하나 찾아요.
+ *  상태: paid 나감 · short 덜 나감 · missing 안 나감(결제일+3일 지남) · upcoming 예정 · unknown 결제일 없음 */
+function fixedStatus(ym) {
+  var tx = allTx().filter(function (t) { return t.ym === ym && spendOf(t) > 0 && t.date <= TODAY; });   // 앞으로 나갈 할부 회차는 아직 안 나간 걸로
+  var used = {}, last = daysIn(ym), now = TODAY;
   var norm = function (x) { return String(x || '').replace(/\s/g, '').toLowerCase(); };
   var items = activeFixed(ym).filter(function (f) {
-    if (!(num(f['결제일']) > 0) || !(num(f['금액']) > 0)) return false;
-    if (f['주기'] === '매년' && String(f['시작월'] || '').slice(5, 7) !== ym.slice(5, 7)) return false;
-    var due = ym + '-' + p2(Math.min(num(f['결제일']), last)), d = new Date(due + 'T00:00:00'); d.setDate(d.getDate() + 3);
-    dueOf[f.id] = due; return ymd(d) <= today;
-  });
-  items.sort(function (a, b) { return (b['가맹점키워드'] ? 1 : 0) - (a['가맹점키워드'] ? 1 : 0); });   // 키워드가 있는 것부터 짝을 지어요
-  items.forEach(function (f) {
+    if (!(num(f['금액']) > 0)) return false;
+    return !(f['주기'] === '매년' && String(f['시작월'] || '').slice(5, 7) !== ym.slice(5, 7));
+  }).slice().sort(function (a, b) { return (b['가맹점키워드'] ? 1 : 0) - (a['가맹점키워드'] ? 1 : 0); });   // 키워드가 있는 것부터 짝을 지어요
+  var out = items.map(function (f) {
     var want = num(f['금액']), kw = norm(f['가맹점키워드']), hits = [];
     if (kw) hits = tx.filter(function (t) { return !used[t.id] && norm(t.name).indexOf(kw) >= 0; });
     else {
@@ -608,11 +595,48 @@ function fixedGaps(ym) {
       if (best) hits = [best];
     }
     hits.forEach(function (t) { used[t.id] = 1; });
-    var paid = hits.reduce(function (s, t) { return s + spendOf(t); }, 0), short = want - paid;
-    if (paid > 0 && short <= Math.max(1000, want * 0.02)) return;   // 몇 원~천 원 차이는 정상
-    out.push({ f: f, id: f.id, want: want, paid: paid, short: short, hits: hits, due: dueOf[f.id], key: 'fx|' + f.id + '|' + ym + '|' + paid });
+    var paid = hits.reduce(function (q, t) { return q + spendOf(t); }, 0), short = want - paid;
+    var day = num(f['결제일']), due = day > 0 ? ym + '-' + p2(Math.min(day, last)) : '', late = false;
+    if (due) { var d = new Date(due + 'T00:00:00'); d.setDate(d.getDate() + 3); late = ymd(d) <= now || ym < now.slice(0, 7); }
+    var ok = paid > 0 && short <= Math.max(1000, want * 0.02);   // 몇 원~천 원 차이는 정상
+    var st = ok ? 'paid' : paid > 0 ? (late ? 'short' : 'paid') : !due ? 'unknown' : late ? 'missing' : 'upcoming';
+    return { f: f, id: f.id, want: want, paid: paid, short: short, hits: hits, due: due, status: st, key: 'fx|' + f.id + '|' + ym + '|' + paid };
   });
-  return out;
+  return out.sort(function (a, b) { return (a.due || '9') < (b.due || '9') ? -1 : 1; });
+}
+/** 결제일이 3일 지났는데 못 찾았거나 덜 나간 것만 (홈 경고용) */
+function fixedGaps(ym) { return fixedStatus(ym).filter(function (x) { return x.status === 'missing' || x.status === 'short'; }); }
+var FX_ST = { paid: ['나감', '#E6F7F0', 'var(--green)'], short: ['덜 나감', 'var(--warnbg)', 'var(--warn)'], missing: ['안 나감', '#FFF0F0', 'var(--red)'], upcoming: ['예정', '#EEF2FF', '#3730A3'], unknown: ['결제일 없음', '#F1F3F5', 'var(--sub)'] };
+function fixedSum(ym) {
+  var list = fixedStatus(ym);
+  var plan = list.reduce(function (q, x) { return q + x.want; }, 0), paid = list.reduce(function (q, x) { return q + x.paid; }, 0);
+  var left = list.filter(function (x) { return x.paid === 0; });
+  return { list: list, plan: plan, paid: paid, left: left, leftSum: left.reduce(function (q, x) { return q + x.want; }, 0) };
+}
+function fixedHomeCard() {
+  var ym = TODAY.slice(0, 7), F = fixedSum(ym);
+  if (!F.list.length) return '';
+  var pct = F.plan ? Math.min(1, F.paid / F.plan) : 0;
+  return '<button class="card" data-a="openFixedMonth" style="border:0;text-align:left;width:100%;display:flex;flex-direction:column;gap:10px">' +
+    '<div class="row" style="justify-content:space-between;width:100%"><h2 class="h2">이번 달 고정 지출</h2><span style="display:flex;align-items:center;gap:4px;font-size:14px;font-weight:700;color:var(--blue2)">' + Math.round(pct * 100) + '%' + ICON.right + '</span></div>' +
+    '<div class="bar" role="img" aria-label="고정 지출 ' + Math.round(pct * 100) + '% 나감"><i style="width:' + Math.round(pct * 100) + '%"></i></div>' +
+    '<div style="font-size:14px"><b>' + won(F.paid) + '</b><span style="color:var(--mute)"> 나감 / 예정 ' + won(F.plan) + '</span></div>' +
+    '<div style="font-size:12px;color:var(--mute);line-height:1.5">' + (F.left.length ? '남은 예정 ' + F.left.length + '건 ' + won(F.leftSum) + ' · ' + esc(F.left.map(function (x) { return x.f['이름']; }).join(', ')) : '이번 달 고정 지출이 모두 나갔어요') + '</div></button>';
+}
+function fixedMonthSheet() {
+  var F = fixedSum(TODAY.slice(0, 7));
+  return '<h2 style="margin:0;font-size:19px;font-weight:800">' + (+TODAY.slice(5, 7)) + '월 고정 지출</h2>' +
+    '<div class="infobox"><div><span>예정 합계</span><span>' + won(F.plan) + '</span></div><div><span>지금까지 나간 돈</span><span style="font-weight:700;color:var(--ink)">' + won(F.paid) + '</span></div>' +
+    '<div><span>아직 안 나간 예정</span><span>' + F.left.length + '건 · ' + won(F.leftSum) + '</span></div></div>' +
+    '<div style="display:flex;flex-direction:column">' + F.list.map(function (x) {
+      var st = FX_ST[x.status], f = x.f;
+      var sub = (num(f['결제일']) ? '매월 ' + num(f['결제일']) + '일' : '결제일 미정') + ' · 예정 ' + won(x.want) + (x.hits.length ? ' · ' + esc(x.hits[0].name) + (x.hits.length > 1 ? ' 외 ' + (x.hits.length - 1) + '건' : '') : '');
+      return '<button data-a="fixedEdit" data-v="' + esc(f.id) + '" style="border:0;border-top:1px solid #F2F4F6;background:transparent;width:100%;display:flex;align-items:center;gap:10px;padding:12px 0;text-align:left">' +
+        '<span style="flex:1;display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:15px;font-weight:700">' + esc(f['이름']) + '</span><span style="font-size:12px;color:var(--mute)">' + sub + '</span></span>' +
+        '<span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span style="font-size:14px;font-weight:700;white-space:nowrap">' + (x.paid ? won(x.paid) : '–') + '</span>' +
+        '<span class="tag" style="background:' + st[1] + ';color:' + st[2] + '">' + st[0] + '</span></span></button>';
+    }).join('') + '</div>' +
+    '<p style="margin:0;font-size:12px;color:var(--mute);line-height:1.55">항목을 누르면 결제일·금액·찾을 가맹점 이름을 고칠 수 있어요. 결제일이 없으면 안 나갔는지 판단하지 못해요.</p>';
 }
 function fixedGapSheet(sh) {
   var g = fixedGaps(TODAY.slice(0, 7)).filter(function (x) { return x.id === sh.id; })[0];
@@ -1553,7 +1577,7 @@ function acctSheet(sh) {
 function renderSheet() {
   var sh = S.sheet;
   if (!sh) { layer.innerHTML = ''; document.body.style.overflow = ''; return; }
-  var F = { tx: txSheet, missing: missingSheet, add: addSheet, connect: connectSheet, addPick: addPickSheet, goal: goalSheet, inst: instSheet, groups: groupsSheet, groupForm: groupFormSheet, assetForm: assetFormSheet, debtForm: debtFormSheet, bal: balSheet, cat: catSheet, kw: kwSheet, fixed: fixedSheet, acct: acctSheet, gift: giftSheet, fixedGap: fixedGapSheet };
+  var F = { tx: txSheet, missing: missingSheet, add: addSheet, connect: connectSheet, addPick: addPickSheet, goal: goalSheet, inst: instSheet, groups: groupsSheet, groupForm: groupFormSheet, assetForm: assetFormSheet, debtForm: debtFormSheet, bal: balSheet, cat: catSheet, kw: kwSheet, fixed: fixedSheet, acct: acctSheet, gift: giftSheet, fixedGap: fixedGapSheet, fixedMonth: fixedMonthSheet };
   var inner = F[sh.kind] ? F[sh.kind](sh) : '';
   if (!inner) { S.sheet = null; layer.innerHTML = ''; return; }
   var keepScroll = layer.querySelector('.sheet');
@@ -1730,6 +1754,7 @@ var ACT = {
   disconnect: function () { if (!confirm('이 휴대폰에서 연결 정보를 지울까요? 시트의 데이터는 그대로예요.')) return; LS.del('gb.conf'); LS.del('gb.cache'); S.conf = null; S.data = null; render(); },
   goAlert: function () { S.tab = 'ledger'; S.filter = 'alert'; S.sel = 0; window.scrollTo(0, 0); render(); },
   openMissing: function (v) { S.sheet = { kind: 'missing', id: v }; renderSheet(); },
+  openFixedMonth: function () { S.sheet = { kind: 'fixedMonth' }; renderSheet(); },
   openFixedGap: function (v) { S.sheet = { kind: 'fixedGap', id: v }; renderSheet(); },
   dismissMissing: function (v) { S.dismissed.push(v); LS.set('gb.dismissed', S.dismissed); S.sheet = null; render(); },
   addMissing: function (v) {
