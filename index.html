@@ -525,11 +525,15 @@ function homeView() {
     '<div class="row" style="justify-content:space-between;padding:0 4px">' +
     '<div class="row" style="align-items:baseline;gap:8px"><h1 class="h1">' + (+ym.slice(5)) + '월</h1><span style="font-size:14px">(' + ym.slice(5) + '.01 ~ ' + ym.slice(5) + '.' + last + ')</span></div>' +
     '<button class="iconbtn" aria-label="새로고침" data-a="reload">' + (S.loading ? '<span class="spin"></span>' : ICON.refresh) + '</button></div>' +
-    '<button class="card" data-a="goLedger" data-v="today" style="border:0;text-align:left;display:flex;flex-direction:column;gap:8px;padding:22px 20px;width:100%"><div class="row" style="justify-content:space-between;width:100%"><span style="font-size:14px;color:var(--mute)">오늘 지출</span>' + ICON.right + '</div><div class="big">' + won(todaySum) + '</div>' +
-    '<div style="font-size:13px;color:var(--mute)">' + (today.length ? today.length + '건 기록 · ' + md(TODAY) : '오늘은 아직 쓴 돈이 없어요') + '</div></button>' +
-    '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">' +
-    miniCard('이번 달 수입', won(income), month.filter(function (t) { return t.type === '수입'; }).length + '건', 'goLedger', 'income', '#1F4FC7') +
-    miniCard('이번 달 지출', won(spent), month.filter(function (t) { return spendOf(t) > 0; }).length + '건', 'goLedger', 'spend') + '</div>';
+    // 오늘 지출 · 이번 달 수입 · 이번 달 지출을 한 칸에
+    '<section class="card" style="padding:0;display:flex;flex-direction:column">' +
+    '<button data-a="goLedger" data-v="today" style="border:0;background:transparent;text-align:left;display:flex;align-items:center;gap:12px;padding:18px 20px 14px;width:100%">' +
+    '<span style="flex:1;display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font-size:13px;color:var(--mute)">오늘 지출</span>' +
+    '<span style="font-size:24px;font-weight:800;letter-spacing:-.4px">' + won(todaySum) + '</span>' +
+    '<span style="font-size:12px;color:var(--mute)">' + (today.length ? today.length + '건 기록 · ' + md(TODAY) : '오늘은 아직 쓴 돈이 없어요') + '</span></span>' + ICON.right + '</button>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #F2F4F6">' +
+    homeStat('이번 달 수입', won(income), month.filter(function (t) { return t.type === '수입'; }).length + '건', 'income', 'var(--blue2)') +
+    homeStat('이번 달 지출', won(spent), month.filter(function (t) { return spendOf(t) > 0; }).length + '건', 'spend', '', true) + '</div></section>';
   if (unc.length || missing.length || fxGaps.length) {
     h += '<section class="issue"><span style="font-size:13px;font-weight:700;color:var(--warn);padding-bottom:4px">확인이 필요해요</span>';
     if (unc.length) h += issueBtn('goAlert', '', '❓', '분류 안 된 내역 ' + unc.length + '건', '자동으로 기록했지만 카테고리를 못 정했어요');
@@ -546,6 +550,12 @@ function homeView() {
   h += '<section class="card" style="padding:18px 20px 8px"><div class="row" style="justify-content:space-between;padding-bottom:6px"><h2 class="h2">최근 내역</h2><button style="border:0;background:transparent;font-size:13px;color:var(--sub);padding:6px" data-a="tab" data-v="ledger">전체 보기</button></div>' +
     (recent.length ? recent.map(function (t) { return txRow(t, true); }).join('') : '<p class="empty">아직 기록된 내역이 없어요</p>') + '</section>';
   return h + '</div>';
+}
+function homeStat(title, big, sub, v, color, line) {
+  return '<button data-a="goLedger" data-v="' + v + '" style="border:0;' + (line ? 'border-left:1px solid #F2F4F6;' : '') + 'background:transparent;text-align:left;display:flex;flex-direction:column;gap:4px;padding:14px 20px 16px;min-width:0">' +
+    '<span style="font-size:12px;color:var(--mute)">' + title + '</span>' +
+    '<span style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:' + (color || 'var(--ink)') + '">' + big + '</span>' +
+    '<span style="font-size:12px;color:var(--mute)">' + esc(sub) + '</span></button>';
 }
 function miniCard(title, big, sub, a, v, color) {
   var tag = a ? 'button' : 'div';
