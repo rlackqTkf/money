@@ -1672,7 +1672,8 @@ function cardGaps(ym) {
     var first = withCum[0], last = withCum[withCum.length - 1];
     var start = first.cum - first.amt;
     var rec = mine.filter(function (t) { return t.when >= first.when && t.when <= last.when; }).reduce(function (q, t) {
-      return q + ((t.type === '지출' || t.type === '확인 필요') ? t.amt : t.type === '취소' ? -t.amt : 0);
+      // 카드로 긁은 건 '이체'(대신 결제 후 돌려받음 등)나 '저축'으로 바꿔도 카드 사용액이라 같이 세요
+      return q + (t.type === '취소' ? -t.amt : (t.type === '지출' || t.type === '확인 필요' || t.type === '이체' || t.type === '저축') ? t.amt : 0);
     }, 0);
     var gap = last.cum - start - rec;
     if (gap > 0) out.push({ id: c.id, name: c['이름'], gap: gap, first: first, last: last, start: start, rec: rec, key: c.id + '|' + ym + '|' + gap });
