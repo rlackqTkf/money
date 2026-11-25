@@ -114,6 +114,12 @@ input,select{font-family:inherit}
 .empty{margin:0;padding:24px 0;text-align:center;font-size:14px;color:var(--mute)}
 .spin{width:16px;height:16px;border:2px solid var(--line2);border-top-color:var(--blue);border-radius:50%;animation:rot .8s linear infinite;display:inline-block;vertical-align:-3px}
 @keyframes rot{to{transform:rotate(360deg)}}
+/* 화면을 아래로 당겨서 새로고침 */
+#ptr{position:fixed;left:50%;top:calc(var(--safe-t) + 8px);z-index:25;width:40px;height:40px;border-radius:20px;background:#fff;box-shadow:0 2px 12px rgba(25,31,40,.16);display:flex;align-items:center;justify-content:center;color:var(--faint);transform:translate(-50%,-70px);visibility:hidden;pointer-events:none}
+#ptr.on{visibility:visible}
+#ptr.ready{color:var(--blue)}
+#ptr.busy svg{animation:rot .8s linear infinite}
+#ptr.back{transition:transform .2s ease-out}
 @keyframes up{from{transform:translate(-50%,40px);opacity:.4}to{transform:translate(-50%,0);opacity:1}}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 .noanim{animation:none!important}
@@ -2140,6 +2146,42 @@ document.addEventListener('input', function (e) {
   }
   layer.addEventListener('touchend', end);
   layer.addEventListener('touchcancel', end);
+})();
+/* 맨 위에서 화면을 아래로 당기면 새로고침 (입력창이 열려 있을 때는 동작 안 함) */
+(function () {
+  var ind = document.createElement('div'); ind.id = 'ptr'; ind.setAttribute('aria-hidden', 'true'); ind.innerHTML = ICON.refresh;
+  document.body.appendChild(ind);
+  var st = null, LIMIT = 70;
+  function place(d, rot) { ind.style.transform = 'translate(-50%,' + (d - 70) + 'px) rotate(' + rot + 'deg)'; }
+  function hide() { ind.classList.add('back'); place(0, 0); setTimeout(function () { ind.className = ''; ind.style.transform = ''; }, 220); }
+  document.addEventListener('touchstart', function (e) {
+    st = null;
+    if (S.sheet || !S.data || e.touches.length > 1 || window.scrollY > 0 || ind.classList.contains('busy')) return;
+    if (e.target.closest('.sheet, .picker, input, select, textarea')) return;
+    st = { y: e.touches[0].clientY, d: 0 };
+  }, { passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!st) return;
+    var dy = e.touches[0].clientY - st.y;
+    if (dy <= 0 || window.scrollY > 0) { if (st.d) hide(); st = null; return; }
+    e.preventDefault();   // 사파리가 화면을 통째로 끌어내리지 않게
+    st.d = Math.min(dy * 0.5, LIMIT + 30);
+    ind.className = 'on' + (st.d >= LIMIT ? ' ready' : '');
+    place(st.d, st.d * 4);
+  }, { passive: false });
+  function end() {
+    if (!st) return;
+    var go = st.d >= LIMIT; st = null;
+    if (!go) return hide();
+    ind.className = 'on ready busy back'; place(LIMIT, 0);
+    NOW = new Date(); TODAY = ymd(NOW);
+    var started = Date.now();
+    Promise.resolve(load(true)).then(function () {
+      setTimeout(hide, Math.max(0, 500 - (Date.now() - started)));   // 너무 빨리 사라지면 됐는지 모르니 최소 0.5초
+    });
+  }
+  document.addEventListener('touchend', end);
+  document.addEventListener('touchcancel', end);
 })();
 /* 두 손가락 확대 막기 */
 ['gesturestart', 'gesturechange'].forEach(function (n) { document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false }); });
