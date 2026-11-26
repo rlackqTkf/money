@@ -1778,7 +1778,7 @@ var ACT = {
     v = String(v).split('#')[0];
     var t = txById(v); if (!t) return;
     var kind = kindOf(t);
-    S.sheet = { kind: 'tx', id: v, draft: { kind: kind, cat: kind === 'spend' || kind === 'income' ? t.cat : '', assetId: t.assetId, learn: true } };
+    S.sheet = { kind: 'tx', id: v, draft: { kind: kind, cat: kind === 'spend' || kind === 'income' ? t.cat : '', assetId: t.assetId, learn: false } };
     renderSheet();
   },
   dKind: function (v) { keepMemo(); var d = S.sheet.draft; if (d.kind !== v) { d.kind = v; d.cat = ''; } renderSheet(); },
